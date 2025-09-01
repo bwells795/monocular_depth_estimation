@@ -1,0 +1,16 @@
+[project]
+name = "Deep-Learning-Project"
+version = "0.1.0"
+description = "Implementation of a deep neural network for monocular depth estimation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "datasets>=4.0.0",
+    "numpy>=2.3.2",
+    "pandas>=2.3.2",
+    "scipy>=1.16.1",
+    "streamlit>=1.49.1",
+    "torch>=2.8.0",
+    "torchvision>=0.23.0",
+    "tqdm>=4.67.1",
+]

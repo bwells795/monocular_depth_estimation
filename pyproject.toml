@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "datasets>=4.0.0",
+    "dinov3>=0.0.1",
     "ftfy>=6.3.1",
     "numpy>=2.3.2",
     "omegaconf>=2.3.0",
@@ -21,3 +22,6 @@ dependencies = [
     "torchvision>=0.23.0",
     "tqdm>=4.67.1",
 ]
+
+[tool.uv.sources]
+dinov3 = { path='dinov3' , editable=true }

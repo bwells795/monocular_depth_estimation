@@ -1,0 +1,7 @@
+model:
+  transformer:
+    dim: 512
+  mlp:
+    n_hidden_layers: 3
+    n_hidden_nodes: 32
+    

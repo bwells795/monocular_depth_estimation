@@ -3,9 +3,10 @@ name = "MDE"
 version = "0.1.0"
 description = "Implementation of a deep neural network for monocular depth estimation"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "datasets>=4.0.0",
+    "debugpy>=1.8.17",
     "dinov3>=0.0.1",
     "ftfy>=6.3.1",
     "numpy>=2.3.2",

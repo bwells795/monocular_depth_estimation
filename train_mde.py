@@ -15,3 +15,7 @@ def main():
 
     mde.train()
     mde.train_estimator()  # placeholder for now
+
+
+if __name__ == "__main__":
+    main()

@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.functional as F
-import torchvision.transforms as v2
-import numpy as np
 from typing import Tuple
+from omegaconf import DictConfig
 
 
 class Embedding(nn.Module):
@@ -138,17 +136,24 @@ class MultiheadAttention(nn.Module):
 
 class MLP(nn.Module):
     """
-    Simple fully connected MLP with dropout and ReLU activation
+    Simple fully connected MLP with dropout and configurable activation
     """
 
-    def __init__(self, n_hidden_layers, n_inputs, n_outputs, n_hidden_nodes):
+    def __init__(
+        self, n_hidden_layers, n_inputs, n_outputs, n_hidden_nodes, activation: str
+    ):
         super().__init__()
 
         assert n_hidden_layers >= 1, f"MLP does not support less than one hidden layer"
         self.first = nn.Linear(n_inputs, n_hidden_nodes)
         self.middle = nn.Linear(n_hidden_nodes, n_hidden_nodes)
         self.last = nn.Linear(n_hidden_nodes, n_outputs)
-        self.relu = nn.ReLU()
+
+        if activation == "ReLU":
+            self.activation = nn.ReLU()
+        elif activation == "GELU":
+            self.activation = nn.GELU()
+
         self.dropout = nn.Dropout(0.2)
 
         ## build model from parts
@@ -157,16 +162,57 @@ class MLP(nn.Module):
         modules.append(self.relu)
         for _ in range(n_hidden_layers):
             modules.append(self.middle)
-            modules.append(self.relu)
+            modules.append(self.activation)
             modules.append(self.dropout)
         modules.append(self.last)
 
-        self.model = nn.ModuleList(modules)
+        mod_list = nn.ModuleList(modules)
+        self.model = nn.Sequential(mod_list)
 
     def forward(self, x):
         """
         use ModuleList directly to pass input through all layers of the MLP
         """
-        for L in self.model:
-            x = L(x)
-        return x
+        return self.model(x)
+
+
+class TransformerEncoder(nn.Module):
+    """
+    Implementation of the full vision transformer inspired by the encoder transformer from Attention is all you need
+    """
+
+    def __init__(self, config: DictConfig):
+        super().__init__()
+
+        self.norm = nn.LayerNorm(config.model.transformer.dim)
+        self.mlp = MLP(
+            n_hidden_layers=config.model.mlp.n_hidden_layers,
+            n_inputs=config.model.mlp.n_inputs,
+            n_outputs=config.model.mlp.n_outputs,
+            n_hidden_nodes=config.model.mlp.n_hidden_nodes,
+            activation=config.model.mlp.activation,
+        )
+        self.mha = MultiheadAttention(
+            n_total_nodes=config.vit.transformer.dim,
+            n_heads=config.vit.transformer.n_heads,
+            n_channels=config.vit.transformer.n_channels,
+        )
+
+    def forward(self, x: torch.Tensor):
+        """
+        Process encoded images keeping skip-level connections from the paper
+            - here x represents the encoded image from the vision encoder forward method
+
+        """
+        n1 = self.norm(x)
+        attn = self.mha(n1)
+
+        # intermediate results also include skip connection from the encoder
+        middle = x + attn
+
+        n2 = self.norm(middle)
+        mlp_out = self.mlp(n2)
+
+        final = middle + mlp_out
+
+        return final

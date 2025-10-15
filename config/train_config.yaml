@@ -17,12 +17,18 @@ vit:
     out_channels: 7
   transformer:
     dim: 512
-    n_heads: 5
+    n_heads: 4
     n_channels: 32
     tfm_depth: 5
     
   mlp:
     n_hidden_layers: 2
     n_hidden_nodes: 32
+    n_inputs: 32
+    n_outputs: 1000
     activation: 'GELU'
+
+train:
+  n_epochs: 5
+  batch_size:
 

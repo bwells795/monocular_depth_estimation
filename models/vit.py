@@ -1,5 +1,5 @@
-from omegaconf import DictConfig
-from utils import Embedding, Encoding, TransformerEncoder
+from omegaconf import DictConfig, ListConfig
+from models.utils import Embedding, Encoding, TransformerEncoder
 import torch.nn as nn
 import torch
 
@@ -10,22 +10,31 @@ class VisionTransformer(nn.Module):
     - This model does not include the final MLP which actually 'learns' the current task
     """
 
-    def __init__(self, config: DictConfig):
+    def __init__(self, config: DictConfig | ListConfig):
         super().__init__()
 
         self.embed = Embedding(
-            img_size=config.embed.img_size,
-            patch_size=config.embed.patch_size,
-            in_channels=config.embed.in_channels,
-            out_channels=config.embed.out_channels,
-        )
-        self.encoder = Encoding(
-            out_channels=config.encode.model_dim, sequence_length=config.encode.seq_len
+            img_size=config.vit.embed.img_size,
+            patch_size=config.vit.embed.patch_size,
+            in_channels=config.vit.embed.in_channels,
+            out_channels=config.vit.embed.out_channels,
         )
 
-        self.tfe = TransformerEncoder(config)
+        # calculate sequence length from patching
+        n_patches = (
+            config.vit.embed.img_size[0] * config.vit.embed.img_size[1]
+        ) / config.vit.embed.patch_size**2
+
+        self.encoder = Encoding(
+            out_channels=config.vit.encode.model_dim,
+            sequence_length=int(n_patches) + 1,
+        )
+
         self.tfm_backbone = nn.Sequential(
-            nn.ModuleList([self.tfe for _ in config.vit.transformer.tfm_depth])
+            *[
+                TransformerEncoder(config)
+                for _ in range(config.vit.transformer.tfm_depth)
+            ]
         )
 
     def forward(self, img: torch.Tensor):

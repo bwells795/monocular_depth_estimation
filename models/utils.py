@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import Tuple
-from omegaconf import DictConfig
+from omegaconf import DictConfig, ListConfig
 
 
 class Embedding(nn.Module):
@@ -27,13 +27,16 @@ class Embedding(nn.Module):
         # use a convolutional layer to extract pixel patches from the provided image without overlap
         # embed the patched kernels to the model dimension out_channels
         self.downsample = nn.Conv2d(
-            in_channels, out_channels, kernel_size=patch_size, stride=patch_size
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=patch_size,
+            stride=patch_size,
         )
 
     def forward(self, x: torch.Tensor):
         x = self.downsample(x)
-        x.flatten(2)
-        x.transpose(1, 2)
+        x = x.flatten(2)
+        x = x.transpose(1, 2)
         return x
 
 
@@ -55,10 +58,14 @@ class Encoding(nn.Module):
         for i in range(sequence_length):
             for j in range(out_channels):
                 if j % 2 == 0:
-                    pos_encs[i][j] = torch.sin(i / 10000 ** (2 * j / out_channels))
+                    pos_encs[i][j] = torch.sin(
+                        torch.tensor(i, dtype=torch.float32)
+                        / 10000 ** (2 * j / out_channels)
+                    )
                 else:
                     pos_encs[i][j] = torch.cos(
-                        i / 10000 ** (2 * (j - 1) / out_channels)
+                        torch.tensor(i, dtype=torch.float32)
+                        / 10000 ** (2 * (j - 1) / out_channels)
                     )
 
         self.register_buffer("pos_encs", pos_encs.unsqueeze(0))
@@ -67,7 +74,7 @@ class Encoding(nn.Module):
         # generate class tokens for each image in the batch
         tokens = self.class_token.expand(x.shape[0], -1, -1)
 
-        # add the class labels to the beginning of each batch
+        # add the encoding labels at index 0 of each batch
         x = torch.cat([tokens, x], dim=1)
 
         # add positional embeddings to the tokens
@@ -83,14 +90,13 @@ class SelfAttention(nn.Module):
 
     """
 
-    def __init__(self, n_head_nodes: int, num_channels: int):
+    def __init__(self, model_size: int, n_head_nodes: int):
         super().__init__()
         self.n_head_nodes = n_head_nodes
-        self.num_channels = num_channels
 
-        self.Q = nn.Linear(n_head_nodes, num_channels)
-        self.K = nn.Linear(n_head_nodes, num_channels)
-        self.V = nn.Linear(n_head_nodes, num_channels)
+        self.Q = nn.Linear(model_size, n_head_nodes)
+        self.K = nn.Linear(model_size, n_head_nodes)
+        self.V = nn.Linear(model_size, n_head_nodes)
 
     def forward(self, x):
         """
@@ -112,26 +118,30 @@ class MultiheadAttention(nn.Module):
 
     """
 
-    def __init__(self, n_total_nodes, n_heads, n_channels):
+    def __init__(self, n_total_nodes, n_heads):
         super().__init__()
         assert (
             n_total_nodes % n_heads == 0
         ), f"Number of multi-head attention heads must be divisible by the number of heads: received {n_total_nodes} total nodes and {n_heads}"
 
-        self.nodes_per_head = n_total_nodes / n_heads
+        self.nodes_per_head = int(
+            n_total_nodes / n_heads
+        )  # wrap to an int for making layers later
+
+        self.final_linear = nn.Linear(n_total_nodes, n_total_nodes)
 
         self.heads = nn.ModuleList(
             [
-                SelfAttention(n_head_nodes=self.nodes_per_head, num_channels=n_channels)
+                SelfAttention(
+                    model_size=n_total_nodes, n_head_nodes=self.nodes_per_head
+                )
                 for _ in range(n_heads)
             ]
         )
 
     def forward(self, x: torch.Tensor):
-        all_procs = []
-        for head in self.heads:
-            all_procs.append(head(x))
-        return torch.cat(all_procs)
+        cat_output = torch.cat([h(x) for h in self.heads], dim=-1)
+        return self.final_linear(cat_output)
 
 
 class MLP(nn.Module):
@@ -144,7 +154,7 @@ class MLP(nn.Module):
     ):
         super().__init__()
 
-        assert n_hidden_layers >= 1, f"MLP does not support less than one hidden layer"
+        assert n_hidden_layers >= 1, "MLP does not support less than one hidden layer"
         self.first = nn.Linear(n_inputs, n_hidden_nodes)
         self.middle = nn.Linear(n_hidden_nodes, n_hidden_nodes)
         self.last = nn.Linear(n_hidden_nodes, n_outputs)
@@ -159,15 +169,19 @@ class MLP(nn.Module):
         ## build model from parts
         modules = []
         modules.append(self.first)
-        modules.append(self.relu)
+
+        if activation == "ReLU":
+            self.activation = nn.ReLU()
+        elif activation == "GELU":
+            self.activation = nn.GELU()
+
         for _ in range(n_hidden_layers):
             modules.append(self.middle)
             modules.append(self.activation)
             modules.append(self.dropout)
         modules.append(self.last)
 
-        mod_list = nn.ModuleList(modules)
-        self.model = nn.Sequential(mod_list)
+        self.model = nn.Sequential(*[m for m in modules])
 
     def forward(self, x):
         """
@@ -181,21 +195,21 @@ class TransformerEncoder(nn.Module):
     Implementation of the full vision transformer inspired by the encoder transformer from Attention is all you need
     """
 
-    def __init__(self, config: DictConfig):
+    def __init__(self, config: DictConfig | ListConfig):
         super().__init__()
 
-        self.norm = nn.LayerNorm(config.model.transformer.dim)
+        self.n1 = nn.LayerNorm(config.vit.transformer.dim)
+        self.n2 = nn.LayerNorm(config.vit.mlp.n_outputs)
         self.mlp = MLP(
-            n_hidden_layers=config.model.mlp.n_hidden_layers,
-            n_inputs=config.model.mlp.n_inputs,
-            n_outputs=config.model.mlp.n_outputs,
-            n_hidden_nodes=config.model.mlp.n_hidden_nodes,
-            activation=config.model.mlp.activation,
+            n_hidden_layers=config.vit.mlp.n_hidden_layers,
+            n_inputs=config.vit.mlp.n_inputs,
+            n_outputs=config.vit.mlp.n_outputs,
+            n_hidden_nodes=config.vit.mlp.n_hidden_nodes,
+            activation=config.vit.mlp.activation,
         )
         self.mha = MultiheadAttention(
             n_total_nodes=config.vit.transformer.dim,
             n_heads=config.vit.transformer.n_heads,
-            n_channels=config.vit.transformer.n_channels,
         )
 
     def forward(self, x: torch.Tensor):
@@ -204,13 +218,13 @@ class TransformerEncoder(nn.Module):
             - here x represents the encoded image from the vision encoder forward method
 
         """
-        n1 = self.norm(x)
+        n1 = self.n1(x)
         attn = self.mha(n1)
 
         # intermediate results also include skip connection from the encoder
         middle = x + attn
 
-        n2 = self.norm(middle)
+        n2 = self.n2(middle)
         mlp_out = self.mlp(n2)
 
         final = middle + mlp_out

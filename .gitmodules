@@ -4,3 +4,6 @@
 [submodule "CutMix-PyTorch"]
 	path = CutMix-PyTorch
 	url = git@github.com:clovaai/CutMix-PyTorch.git
+[submodule "diode"]
+	path = diode
+	url = git@github.com:MJBaker98/diode-devkit.git

@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# data directory
+data
+
+# apple stuff
+.DS_Store

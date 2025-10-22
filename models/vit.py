@@ -17,7 +17,7 @@ class VisionTransformer(nn.Module):
             img_size=config.vit.embed.img_size,
             patch_size=config.vit.embed.patch_size,
             in_channels=config.vit.embed.in_channels,
-            out_channels=config.vit.embed.out_channels,
+            out_channels=config.vit.model_dim,
         )
 
         # calculate sequence length from patching
@@ -26,7 +26,7 @@ class VisionTransformer(nn.Module):
         ) / config.vit.embed.patch_size**2
 
         self.encoder = Encoding(
-            out_channels=config.vit.encode.model_dim,
+            out_channels=config.vit.model_dim,
             sequence_length=int(n_patches) + 1,
         )
 

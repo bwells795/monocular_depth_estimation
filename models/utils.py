@@ -42,7 +42,7 @@ class Embedding(nn.Module):
 
 class Encoding(nn.Module):
     """
-    Class containing the emcoding representation
+    Class containing the encoding representation
     """
 
     pos_encs: torch.Tensor
@@ -198,17 +198,17 @@ class TransformerEncoder(nn.Module):
     def __init__(self, config: DictConfig | ListConfig):
         super().__init__()
 
-        self.n1 = nn.LayerNorm(config.vit.transformer.dim)
-        self.n2 = nn.LayerNorm(config.vit.mlp.n_outputs)
+        self.n1 = nn.LayerNorm(config.vit.model_dim)
+        self.n2 = nn.LayerNorm(config.vit.model_dim)
         self.mlp = MLP(
             n_hidden_layers=config.vit.mlp.n_hidden_layers,
-            n_inputs=config.vit.mlp.n_inputs,
-            n_outputs=config.vit.mlp.n_outputs,
+            n_inputs=config.vit.model_dim,
+            n_outputs=config.vit.model_dim,
             n_hidden_nodes=config.vit.mlp.n_hidden_nodes,
             activation=config.vit.mlp.activation,
         )
         self.mha = MultiheadAttention(
-            n_total_nodes=config.vit.transformer.dim,
+            n_total_nodes=config.vit.model_dim,
             n_heads=config.vit.transformer.n_heads,
         )
 

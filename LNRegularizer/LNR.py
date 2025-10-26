@@ -64,6 +64,12 @@ class LNR(nn.Module):
 
 
     def forward(self, x):
+        # Convert 2 3 channel images to a 6 channel paired image
+        for i in range(int(x.size(dim=0)/2)):
+            x[i] = torch.cat((x[i], x[i+1]), dim=0)
+        x = x[:int(x.size(dim=0)/2)-1]
+
+
         skip_block_1 = self.d_conv1(x)
         out = self.pool_layer(skip_block_1)
 
@@ -79,21 +85,20 @@ class LNR(nn.Module):
         out = self.b_neck(out)
 
         out = self.up_conv1(out)
-        out = self.u_conv1(torch.cat(skip_block_4, out, dim=1))       
+        out = self.u_conv1(torch.cat((skip_block_4, out), dim=1))       
 
         out = self.up_conv2(out)
-        out = self.u_conv2(torch.cat(skip_block_2, out, dim=1))  
+        out = self.u_conv2(torch.cat((skip_block_2, out), dim=1))  
 
         out = self.up_conv3(out)
-        out = self.u_conv3(torch.cat(skip_block_2, out, dim=1))  
+        out = self.u_conv3(torch.cat((skip_block_2, out), dim=1))  
 
         out = self.up_conv4(out)
-        out = self.u_conv4(torch.cat(skip_block_1, out, dim=1))  
+        out = self.u_conv4(torch.cat((skip_block_1, out), dim=1))  
 
         self.out_layer(out)
 
         out = torch.round(self.softmax(out)) 
-        out = torch.cat(out[:][0] * x[:][0:3] + out[:][1] * x[:][0:3], out[:][0] * x[:][3:] + out[:][1] * x[:][3:]) # Swap the original images
+        out = torch.cat((out[:][0] * x[:][0:3] + out[:][1] * x[:][0:3], out[:][0] * x[:][3:] + out[:][1] * x[:][3:])) # Swap the original images
 
         return out
-    

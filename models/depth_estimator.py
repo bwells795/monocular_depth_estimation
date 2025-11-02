@@ -45,7 +45,7 @@ class DepthEstimator(nn.Module):
         self.to(self.device)
         self.LNR = None
         if use_LNR:
-            self.LNR = LNR()
+            self.LNR = LNR(self.device)
 
     def forward(self, imgs: torch.Tensor):
         if self.LNR is not None:
@@ -98,7 +98,7 @@ class DepthEstimator(nn.Module):
                 curr_mem = 0
                 if self.device.type == "mps":
                     curr_mem = torch.mps.current_allocated_memory()
-                elif self.device == "cuda":
+                elif self.device == torch.device("cuda"):
                     _, curr_mem = torch.cuda.mem_get_info(self.device)
 
                 pbar.set_postfix_str(

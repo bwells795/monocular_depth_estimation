@@ -37,6 +37,11 @@ class VisionTransformer(nn.Module):
             ]
         )
 
+        # for i, layer in enumerate(self.tfm_backbone):
+        #     # register hooks at hook locations from config
+        #     if i in config.hook_layers:
+        #         layer.register_forward_hook()
+
     def forward(self, img: torch.Tensor):
         """
         process an image through the vision transformer

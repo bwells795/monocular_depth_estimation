@@ -15,10 +15,11 @@ from torch.optim.adam import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torchvision.transforms as v2
+from LNRegularizer.LNR import LNR
 
 
 class DepthEstimator(nn.Module):
-    def __init__(self, config: DictConfig | ListConfig, device: torch.device):
+    def __init__(self, config: DictConfig | ListConfig, device: torch.device, use_LNR: bool = False):
         super().__init__()
         # use config to set parameters
         self.vit = VisionTransformer(config)
@@ -42,9 +43,16 @@ class DepthEstimator(nn.Module):
         self.train_config = config.train
         self.device = device
         self.to(self.device)
+        self.LNR = None
+        if use_LNR:
+            self.LNR = LNR(self.device)
 
     def forward(self, imgs: torch.Tensor):
-        vit_out = self.vit(imgs)
+        if self.LNR is not None:
+            LNR_out = self.LNR(imgs)
+        else:
+            LNR_out = imgs
+        vit_out = self.vit(LNR_out)
         depth_map = self.mlp(vit_out[:, 0])
         # may also need to reshape here
         return depth_map
@@ -90,7 +98,7 @@ class DepthEstimator(nn.Module):
                 curr_mem = 0
                 if self.device.type == "mps":
                     curr_mem = torch.mps.current_allocated_memory()
-                elif self.device == "cuda":
+                elif self.device == torch.device("cuda"):
                     _, curr_mem = torch.cuda.mem_get_info(self.device)
 
                 pbar.set_postfix_str(

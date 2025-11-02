@@ -22,18 +22,19 @@ def train(
     optim: Optimizer,
     loss: nn.Module,
     epochs: int = 50,
+    print_every: int = 1,
 ):
     """
     Train depth head on NYU dataset
     """
     model.train()
-    pbar = tqdm(total=epochs * len(loader), desc="Trainint MDE:")
+    pbar = tqdm(total=epochs * len(loader), desc="Training MDE:")
     i = 0
     for _ in range(epochs):
         for batch in loader:
-            X = batch["image"].to("mps")
-            y = batch["depth"].to("mps")
-            mask = batch["mask"].to("mps")
+            X = batch["image"].float().to("mps")
+            y = batch["depth"].float().to("mps")
+            mask = batch["mask"].float().to("mps")
 
             X = X.permute(0, 3, 1, 2)
 
@@ -45,9 +46,9 @@ def train(
             err.backward()
             optim.step()
 
-            if i % 10 == 0:
+            if i % print_every == 0:
                 pbar.set_postfix_str(f"loss: {err:.2f}")
-                pbar.update(10)
+                pbar.update(print_every)
 
             i += 1
 
@@ -77,6 +78,7 @@ if __name__ == "__main__":
     print("Running training and assessment for DPT-based model")
 
     MDE_model = DPTDepthModel()  # create a standard DPT depth prediction model# download from http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat
+    MDE_model = MDE_model.float().to("mps")
     NYU_DATA_PATH = "data/nyu_data/nyu_depth_v2_labeled.mat"
 
     # download from http://horatio.cs.nyu.edu/mit/silberman/indoor_seg_sup/splits.mat
@@ -84,8 +86,8 @@ if __name__ == "__main__":
 
     nyu_test_ds = NyuDepthV2(NYU_DATA_PATH, NYU_SPLIT_PATH, split="test")
     nyu_train_ds = NyuDepthV2(NYU_DATA_PATH, NYU_SPLIT_PATH, split="train")
-    nyu_train_dataloader = DataLoader(nyu_train_ds, batch_size=32)
-    nyu_test_dataloader = DataLoader(nyu_train_ds, batch_size=32)
+    nyu_train_dataloader = DataLoader(nyu_train_ds, batch_size=12)
+    nyu_test_dataloader = DataLoader(nyu_train_ds, batch_size=12)
 
     # create optimizer object
     optim = Adam(MDE_model.parameters(), lr=0.01)

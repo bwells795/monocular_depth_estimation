@@ -12,5 +12,7 @@ wheels/
 # data directory
 data
 
+uv.lock
+
 # apple stuff
 .DS_Store

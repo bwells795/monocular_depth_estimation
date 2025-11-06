@@ -11,6 +11,7 @@ from datasets import load_dataset
 from torch.optim import Adam, Optimizer
 from DPT.dpt.models import DPTDepthModel
 from losses.mde_losses import ScaleAndShiftInvariantLoss
+from losses.LMR import 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from dataloaders.nyu_data import NyuDepthV2
@@ -20,7 +21,6 @@ def train(
     model: nn.Module,
     loader: DataLoader,
     optim: Optimizer,
-    loss: nn.Module,
     epochs: int = 50,
     print_every: int = 1,
 ):
@@ -30,6 +30,8 @@ def train(
     model.train()
     pbar = tqdm(total=epochs * len(loader), desc="Training MDE:")
     i = 0
+    # loss function
+    loss = ScaleAndShiftInvariantLoss()
     for _ in range(epochs):
         for batch in loader:
             X = batch["image"].float().to("mps")
@@ -53,25 +55,26 @@ def train(
             i += 1
 
 
-def eval(model: nn.Module, loader: DataLoader, loss: nn.Module):
+def eval(model: nn.Module, loader: DataLoader):
     """
     assess the accuracy of the model
     """
     model.eval()
     pbar = tqdm(total=len(loader), desc="Evaluating MDE:")
+    test_err = []
     for batch in loader:
         X = batch["image"]
         y = batch["depth"]
         mask = batch["mask"]
-
-        prediction = model(X)
-        err = loss(prediction, y, mask)
+        with torch.no_grad():
+            prediction = model(X)
+            err = loss(prediction, y, mask)
+            test_err.append(err)
 
         # process optimizer
-        optim.zero_grad()
-        err.backward()
-        optim.step()
         pbar.update(1)
+
+    print(f"Average Scale and Shift Inviariant Loss: {sum(test_err)/len(test_err)}")
 
 
 if __name__ == "__main__":
@@ -90,11 +93,13 @@ if __name__ == "__main__":
     nyu_test_dataloader = DataLoader(nyu_train_ds, batch_size=12)
 
     # create optimizer object
-    optim = Adam(MDE_model.parameters(), lr=0.01)
-
-    # loss function
-    credential = ScaleAndShiftInvariantLoss()
+    optim = Adam(MDE_model.parameters(), lr=0.001)
 
     # train and evaluate model
-    train(MDE_model, loader=nyu_train_dataloader, optim=optim, loss=credential)
-    eval(MDE_model, loader=nyu_test_dataloader, loss=credential)
+    train(
+        model=MDE_model,
+        loader=nyu_train_dataloader,
+        optim=optim,
+        epochs=1,
+    )
+    eval(MDE_model, loader=nyu_test_dataloader)

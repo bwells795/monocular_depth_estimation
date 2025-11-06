@@ -15,7 +15,7 @@ def main():
     config = OmegaConf.load("config/train_config.yaml")
     data_path = ""
 
-    mde = DepthEstimator(config=config, device=torch.device("mps"))
+    mde = DepthEstimator(config=config, device=torch.device("cuda"), use_LNR=True)
     dataset = DIODE(
         meta_fname="diode/diode_meta.json",
         data_root=data_path,

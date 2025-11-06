@@ -11,13 +11,15 @@ from datasets import load_dataset
 from torch.optim import Adam, Optimizer
 from DPT.dpt.models import DPTDepthModel
 from losses.mde_losses import ScaleAndShiftInvariantLoss
-from losses.LMR import 
+from losses.LMR import LMRLoss
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from dataloaders.nyu_data import NyuDepthV2
+from LNRegularizer.LNR import LNR
+from torchvision.transforms import v2
 
 
-def train(
+def train_simple(
     model: nn.Module,
     loader: DataLoader,
     optim: Optimizer,
@@ -25,13 +27,16 @@ def train(
     print_every: int = 1,
 ):
     """
-    Train depth head on NYU dataset
+    Train depth head on NYU dataset with no additional regularization
     """
     model.train()
     pbar = tqdm(total=epochs * len(loader), desc="Training MDE:")
     i = 0
     # loss function
     loss = ScaleAndShiftInvariantLoss()
+    lmr_loss = LMRLoss()
+
+    # training loop
     for _ in range(epochs):
         for batch in loader:
             X = batch["image"].float().to("mps")
@@ -40,12 +45,116 @@ def train(
 
             X = X.permute(0, 3, 1, 2)
 
+            # calculate depth
             prediction = model(X)
+
+            # calculate losses
             err = loss(prediction, y, mask)
 
             # process optimizer
             optim.zero_grad()
-            err.backward()
+            err.backward()  # back-prop losses
+            optim.step()
+
+            if i % print_every == 0:
+                pbar.set_postfix_str(f"loss: {err:.2f}")
+                pbar.update(print_every)
+
+            i += 1
+
+
+def train_with_lmr(
+    model: nn.Module,
+    loader: DataLoader,
+    optim: Optimizer,
+    epochs: int = 50,
+    print_every: int = 1,
+):
+    """
+    Train depth head on NYU dataset with lmr regularizer
+    """
+    model.train()
+    pbar = tqdm(total=epochs * len(loader), desc="Training MDE:")
+    i = 0
+    # loss function
+    loss = ScaleAndShiftInvariantLoss()
+    lmr_loss = LMRLoss()
+
+    # training loop
+    for _ in range(epochs):
+        for batch in loader:
+            X = batch["image"].float().to("mps")
+            y = batch["depth"].float().to("mps")
+            mask = batch["mask"].float().to("mps")
+
+            X = X.permute(0, 3, 1, 2)
+
+            # pass input through LMR model
+            output_mask = LNR(X)
+
+            # calculate depth
+            prediction = model(X)
+
+            # calculate losses
+            err = loss(prediction, y, mask)
+            lmr_mask_loss = lmr_loss(
+                net_mask=output_mask, depth_hat=prediction.detatch(), depth=y, k=100
+            )
+
+            err = err + lmr_mask_loss  # combine losses
+
+            # process optimizer
+            optim.zero_grad()
+            err.backward()  # back-prop losses
+            optim.step()
+
+            if i % print_every == 0:
+                pbar.set_postfix_str(f"loss: {err:.2f}")
+                pbar.update(print_every)
+
+            i += 1
+
+
+def train_with_cutmix(
+    model: nn.Module,
+    loader: DataLoader,
+    optim: Optimizer,
+    epochs: int = 50,
+    print_every: int = 1,
+):
+    """
+    Train depth head on NYU dataset using cutmix regularization
+    """
+    model.train()
+    pbar = tqdm(total=epochs * len(loader), desc="Training MDE:")
+    i = 0
+    # loss function
+    loss = ScaleAndShiftInvariantLoss()
+    lmr_loss = LMRLoss()
+
+    # cutmix transform
+    cutmix = v2.CutMix()
+
+    # training loop
+    for _ in range(epochs):
+        for batch in loader:
+            X = batch["image"].float().to("mps")
+            y = batch["depth"].float().to("mps")
+            mask = batch["mask"].float().to("mps")
+
+            X = X.permute(0, 3, 1, 2)
+
+            # apply cutmix to batch
+            X, y = cutmix(X, y)
+
+            # calculate depth
+            prediction = model(X)
+
+            # calculate losses
+            err = loss(prediction, y, mask)
+            # process optimizer
+            optim.zero_grad()
+            err.backward()  # back-prop losses
             optim.step()
 
             if i % print_every == 0:
@@ -65,10 +174,11 @@ def eval(model: nn.Module, loader: DataLoader):
     for batch in loader:
         X = batch["image"]
         y = batch["depth"]
-        mask = batch["mask"]
         with torch.no_grad():
             prediction = model(X)
-            err = loss(prediction, y, mask)
+            err = F.mse_loss(
+                prediction, y
+            )  # when looking at error for evaluation use MSE loss
             test_err.append(err)
 
         # process optimizer
@@ -96,7 +206,7 @@ if __name__ == "__main__":
     optim = Adam(MDE_model.parameters(), lr=0.001)
 
     # train and evaluate model
-    train(
+    train_simple(
         model=MDE_model,
         loader=nyu_train_dataloader,
         optim=optim,

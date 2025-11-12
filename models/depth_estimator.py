@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from omegaconf import DictConfig, ListConfig
 import numpy as np
 
+from losses.mde_losses import ScaleAndShiftInvariantLoss
 from models.utils import MLP
 from models.vit import VisionTransformer
 from torch.optim.adam import Adam
@@ -62,6 +63,7 @@ class DepthEstimator(nn.Module):
 
         # create training loop and make progress bar
         pbar = tqdm(total=len(data_src) * self.train_config.n_epochs)
+        loss_func = ScaleAndShiftInvariantLoss()
         for e in range(self.train_config.n_epochs):
             for img, gt_depths, _ in data_src:
                 # convert img format to tensor if needed
@@ -89,7 +91,7 @@ class DepthEstimator(nn.Module):
                 transform = v2.Resize(self.new_size)
                 gt = transform(gt_torch)
 
-                loss = F.mse_loss(depths, gt)
+                loss = loss_func(depths, gt)
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()

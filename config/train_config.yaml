@@ -9,7 +9,8 @@ depth:
 vit:
   model_dim: 36
   embed:
-    img_size: [1024, 768]  # image size for DIODE data
+    #img_size: [1024, 768]  # image size for DIODE data
+    img_size: [480, 640]  # image size for NYU dataset data
     patch_size: 16
     in_channels: 3
   transformer:

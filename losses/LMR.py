@@ -21,7 +21,7 @@ class LMRLoss(nn.Module):
         k: int,
     ):
         """
-        Implement this from the paper
+        Implement this from our report
         """
         return self.info_gain_loss(net_mask, depth_hat, depth, k)
 

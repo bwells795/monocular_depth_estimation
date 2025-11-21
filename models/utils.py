@@ -1,5 +1,3 @@
-from typing import Callable, Tuple
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -13,7 +11,7 @@ class Embedding(nn.Module):
 
     def __init__(
         self,
-        img_size: Tuple[int, int],
+        img_size: tuple[int, int],
         patch_size: int,
         in_channels: int,
         out_channels: int,
@@ -120,7 +118,7 @@ class MultiheadAttention(nn.Module):
 
     """
 
-    def __init__(self, n_total_nodes, n_heads):
+    def __init__(self, n_total_nodes: int, n_heads: int):
         super().__init__()
         assert n_total_nodes % n_heads == 0, (
             f"Number of multi-head attention heads must be divisible by the number of heads: received {n_total_nodes} total nodes and {n_heads}"
@@ -152,7 +150,12 @@ class MLP(nn.Module):
     """
 
     def __init__(
-        self, n_hidden_layers, n_inputs, n_outputs, n_hidden_nodes, activation: str
+        self,
+        n_hidden_layers: int,
+        n_inputs: int,
+        n_outputs: int,
+        n_hidden_nodes: int,
+        activation: str,
     ):
         super().__init__()
 
@@ -236,10 +239,10 @@ class TransformerEncoder(nn.Module):
 
 def regression_cutmix(
     images: torch.Tensor, targets: torch.Tensor, beta: float = 0.1
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Method that implements the CutMix regularizer for regression tasks
-        Much of this follows the implementation from the CutMix-PyTorch repo but in 2D
+        Much of this follows the implementation from the CutMix-PyTorch repo
 
     Args:
         images: torch.Tensor, Images to process

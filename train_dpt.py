@@ -3,26 +3,90 @@ This file contains the classes necessary to implement the DPT fusion model
 first published in Ranftl et. al., (Vision Transformers for Dense Prediction)
 """
 
-from omegaconf import DictConfig, ListConfig
+import random
+import sys
+from typing import Callable, Dict, List, Tuple
+
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from datasets import load_dataset
-from torch.optim import AdamW, Optimizer
-from DPT.dpt.models import DPTDepthModel
-from losses.mde_losses import ScaleAndShiftInvariantLoss
-from losses.LMR import LMRLoss
-from torch.utils.data import DataLoader
-from dataloaders.nyu_data import NyuDepthV2
-from LNRegularizer.LNR import LNR
+from matplotlib.transforms import CompositeAffine2D
+from torch.optim import Adam, Optimizer
+from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
-from typing import Dict
-import sys
+
+from dataloaders.nyu_data import NyuDepthV2
+from DPT.dpt.models import DPTDepthModel
+from LNRegularizer.LNR import LNR
+from losses.LMR import LMRLoss
+from losses.mde_losses import ScaleAndShiftInvariantLoss
 
 if "IPython" in sys.modules:
     from tqdm.notebook import tqdm
 else:
     from tqdm import tqdm
+
+from datetime import datetime
+from pathlib import Path
+
+from models.utils import regression_cutmix
+
+
+def plot_test_frames(
+    model: nn.Module,
+    dataset: Dataset,
+    indices: List[int],
+    epoch: int,
+    save_fig: bool = False,
+) -> None:
+    """Generate a plot of depth images at specific indices"""
+    for i in indices:
+        datapoint = dataset[i]
+        X = datapoint["image"]
+        y = datapoint["depth"]
+        mask = datapoint["mask"]
+
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 8))
+        ax1.imshow(X)
+        ax1.set_title("Image")
+        ax2.imshow(y)
+        ax2.set_title("Truth depth")
+
+        X = torch.Tensor(X).to("mps").unsqueeze(0).permute(0, 3, 1, 2)
+        with torch.no_grad():
+            prediction = model(X).permute(1, 2, 0).cpu().numpy()
+        ax3.imshow(prediction, cmap="viridis")
+        ax3.set_title("Predicted depth")
+
+        output_path = Path("output/figs")
+
+        if save_fig:
+            out_str = f"depth_index_{i}_epoch_{epoch}.png"
+            plt.savefig(out_str)
+        else:
+            plt.show()
+
+
+def plot_while_training(
+    image: torch.Tensor,
+    truth: torch.Tensor,
+    prediction: torch.Tensor,
+    epoch: int,
+    model_name: str,
+) -> None:
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 8))
+    ax1.imshow(image.permute(1, 2, 0).cpu())
+    ax1.set_title("Image")
+    ax2.imshow(truth.cpu(), cmap="viridis")
+    ax2.set_title("Truth depth")
+    ax3.imshow(prediction.cpu(), cmap="viridis")
+    ax3.set_title("Predicted depth")
+
+    out_path = Path(f"output/figs/{model_name}")
+    out_path.mkdir(parents=True, exist_ok=True)
+    out_path = out_path / f"depth_index_epoch_{epoch}.png"
+    plt.savefig(out_path)
 
 
 def train_simple(
@@ -42,7 +106,7 @@ def train_simple(
     loss = ScaleAndShiftInvariantLoss()
 
     # training loop
-    for _ in range(epochs):
+    for e in range(epochs):
         for batch in loader:
             X = batch["image"].float().to("mps")
             y = batch["depth"].float().to("mps")
@@ -60,6 +124,8 @@ def train_simple(
 
             composite_loss = (2 * err) + (0.5 * mse_loss) + (0.1 * l1_loss)
 
+            # print(f"composite_loss requires_grad: {composite_loss.requires_grad}")
+
             # process optimizer
             optim.zero_grad()
             composite_loss.backward()  # back-prop losses
@@ -67,22 +133,32 @@ def train_simple(
 
             # debugging
             grads = []
-            for p in model.parameters():
-                try:
-                    grads.append(p.grad.view(-1))
-                except:
+            for name, p in model.named_parameters():
+                if p.grad is not None:
+                    grads.append(p.grad.norm().item())
+                else:
                     pass
-            grads = torch.cat(grads)
+                    # print(f"{name} gradient is none")
+
+            grads = torch.Tensor(grads)
 
             if i % print_every == 0:
                 with torch.no_grad():
                     mse_loss = F.mse_loss(prediction, y)
                 pbar.set_postfix_str(
-                    f"train_loss: {err:.2f} | mse_loss: {mse_loss:.2f} | l1_loss: {l1_loss:.2f} | composite loss: {composite_loss:.2f} | Average gradient: {grads.mean()} | min grad: {grads.min()} | max grad {grads.max()}"
+                    f"train_loss: {err:.2f} | mse_loss: {mse_loss:.2f} | l1_loss: {l1_loss:.2f} | composite loss: {composite_loss:.2f} | min pred. depth: {prediction.min().item():.2f} | max pred. depth: {prediction.max().item():.2f}"
                 )
                 pbar.update(print_every)
 
             i += 1
+
+        with torch.no_grad():
+            try:
+                plot_while_training(
+                    X[0, ...], y[0, ...], prediction[0, ...], e, "simple"
+                )
+            except:
+                print("Failed while writing figure... continuing")
 
 
 def train_with_lmr(
@@ -103,7 +179,7 @@ def train_with_lmr(
     lmr_loss = LMRLoss()
 
     # training loop
-    for _ in range(epochs):
+    for e in range(epochs):
         for batch in loader:
             X = batch["image"].float().to("mps")
             y = batch["depth"].float().to("mps")
@@ -119,26 +195,36 @@ def train_with_lmr(
 
             # calculate losses
             err = loss(prediction, y, mask)
+            mse_loss = F.mse_loss(prediction, y)
+            l1_loss = F.smooth_l1_loss(prediction, y)
             lmr_mask_loss = lmr_loss(
                 net_mask=output_mask, depth_hat=prediction.detach(), depth=y, k=100
             )
 
-            err = err + lmr_mask_loss  # combine losses
+            composite_loss = (
+                (2 * err) + (0.5 * mse_loss) + (0.1 * l1_loss) + (0.5 * lmr_mask_loss)
+            )  # combine losses
 
             # process optimizer
             optim.zero_grad()
-            err.backward()  # back-prop losses
+            composite_loss.backward()  # back-prop losses
             optim.step()
 
             if i % print_every == 0:
                 with torch.no_grad():
                     mse_loss = F.mse_loss(prediction, y)
                 pbar.set_postfix_str(
-                    f"train_loss: {err:.2f} | mse_loss: {mse_loss:.2f}"
+                    f"train_loss: {err:.2f} | mse_loss: {mse_loss:.2f} | l1_loss: {l1_loss:.2f} | LMR Loss: {lmr_mask_loss:.2f} | composite loss: {composite_loss:.2f} | min pred. depth: {prediction.min().item():.2f} | max pred. depth: {prediction.max().item():.2f}"
                 )
                 pbar.update(print_every)
 
             i += 1
+
+        with torch.no_grad():
+            try:
+                plot_while_training(X[0, ...], y[0, ...], prediction[0, ...], e, "LMR")
+            except:
+                print("Failed while writing figure... continuing")
 
 
 def train_with_cutmix(
@@ -147,6 +233,7 @@ def train_with_cutmix(
     optim: Optimizer,
     epochs: int = 50,
     print_every: int = 1,
+    cutmix_probability: float = 0.1,
 ) -> None:
     """
     Train depth head on NYU dataset using cutmix regularization
@@ -156,42 +243,65 @@ def train_with_cutmix(
     i = 0
     # loss function
     loss = ScaleAndShiftInvariantLoss()
-    lmr_loss = LMRLoss()
-
-    # cutmix transform
-    cutmix = v2.CutMix()
 
     # training loop
-    for _ in range(epochs):
+    for e in range(epochs):
         for batch in loader:
-            X = batch["image"].float().to("mps")
-            y = batch["depth"].float().to("mps")
+            images = batch["image"].float().to("mps")
+            targets = batch["depth"].float().to("mps")
             mask = batch["mask"].float().to("mps")
 
-            X = X.permute(0, 3, 1, 2)
+            images = images.permute(0, 3, 1, 2)
 
-            # apply cutmix to batch
-            X, y = cutmix(X, y)
+            if random.random() <= cutmix_probability:
+                # apply cutmix to batch with a specifiic probability
+                lam, images, y_a, y_b = regression_cutmix(images, targets)
 
-            # calculate depth
-            prediction = model(X)
+                # calculate depth
+                prediction = model(images)
 
-            # calculate losses
-            err = loss(prediction, y, mask)
+                # call the loss function on each output and input set separately
+                def apply_cutmix(fcn: Callable) -> torch.Tensor:
+                    return fcn(prediction, y_a) * lam + fcn(prediction, y_b) * (
+                        1.0 - lam
+                    )
+
+                # calculate losses
+                err = loss(prediction, y_a, mask) * lam + loss(
+                    prediction, y_b, mask
+                ) * (1.0 - lam)
+                mse_loss = apply_cutmix(F.mse_loss)
+                l1_loss = apply_cutmix(F.smooth_l1_loss)
+            else:
+                prediction = model(images)
+                err = loss(prediction, targets, mask)
+                mse_loss = F.mse_loss(prediction, targets)
+                l1_loss = F.smooth_l1_loss(prediction, targets)
+
+            composite_loss = (0.1 * err) + (0.5 * mse_loss) + (0.1 * l1_loss)
+
             # process optimizer
             optim.zero_grad()
-            err.backward()  # back-prop losses
+            composite_loss.backward()  # back-prop losses
             optim.step()
 
             if i % print_every == 0:
                 with torch.no_grad():
-                    mse_loss = F.mse_loss(prediction, y)
+                    mse_loss = F.mse_loss(prediction, targets)
                 pbar.set_postfix_str(
-                    f"train_loss: {err:.2f} | mse_loss: {mse_loss:.2f}"
+                    f"train_loss: {err:.2f} | mse_loss: {mse_loss:.2f} | l1_loss: {l1_loss:.2f} | composite loss: {composite_loss:.2f} | min pred. depth: {prediction.min().item():.2f} | max pred. depth: {prediction.max().item():.2f}"
                 )
                 pbar.update(print_every)
 
             i += 1
+
+        with torch.no_grad():
+            try:
+                plot_while_training(
+                    images[0, ...], targets[0, ...], prediction[0, ...], e, "cutmix"
+                )
+            except:
+                print("Failed while writing figure... continuing")
 
 
 def eval(model: nn.Module, loader: DataLoader) -> Dict:
@@ -216,8 +326,33 @@ def eval(model: nn.Module, loader: DataLoader) -> Dict:
         pbar.set_postfix_str(f"mse_loss: {err:.2f}")
         pbar.update(1)
 
-    print(f"Average MSE Loss: {sum(test_err)/len(test_err)}")
+    print(f"Average MSE Loss: {sum(test_err) / len(test_err)}")
     return {"mse_avg": sum(test_err) / len(test_err)}
+
+
+def init_model():
+    model = (
+        DPTDepthModel(
+            path="/Users/michael/Documents/Grad_School/Fall25/DeepLearning/Project/MDE/DPT/dpt/weights/dpt_hybrid-midas-501f0c75.pt",
+            scale=0.000305,
+            shift=0.1378,
+            invert=True,
+            backbone="vitb_rn50_384",
+            non_negative=True,
+            enable_attention_hooks=False,
+        )
+        .float()
+        .to("mps")
+    )
+
+    # keep everything but initialize the final head model
+    for name, param in model.named_parameters():
+        if "output_conv" in name or "head" in name:
+            if "weight" in name:
+                print(f"Initializing {name} to kaiming normal")
+                _ = nn.init.kaiming_normal_(param)
+
+    return model
 
 
 if __name__ == "__main__":
@@ -230,7 +365,7 @@ if __name__ == "__main__":
         backbone="vitb_rn50_384",
         non_negative=True,
         enable_attention_hooks=False,
-    )  # create a standard DPT depth prediction model# download from http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat
+    )  # create a standard DPT depth prediction model
     MDE_model = MDE_model.float().to("mps")
     NYU_DATA_PATH = "data/nyu_data/nyu_depth_v2_labeled.mat"
 
@@ -239,17 +374,68 @@ if __name__ == "__main__":
 
     nyu_test_ds = NyuDepthV2(NYU_DATA_PATH, NYU_SPLIT_PATH, split="test")
     nyu_train_ds = NyuDepthV2(NYU_DATA_PATH, NYU_SPLIT_PATH, split="train")
-    nyu_train_dataloader = DataLoader(nyu_train_ds, batch_size=1)
-    nyu_test_dataloader = DataLoader(nyu_train_ds, batch_size=1)
+    nyu_train_dataloader = DataLoader(nyu_train_ds, batch_size=12)
+    nyu_test_dataloader = DataLoader(nyu_train_ds, batch_size=12)
 
-    # create optimizer object
-    optim = AdamW(MDE_model.parameters(), lr=0.001, weight_decay=1e-5)
+    ########################
+    # model training booleans
+    do_simple = False
+    do_cutmix = True
+    do_LMR = False
 
-    # train and evaluate model
-    train_simple(
-        model=MDE_model,
-        loader=nyu_train_dataloader,
-        optim=optim,
-        epochs=1,
-    )
-    eval(MDE_model, loader=nyu_test_dataloader)
+    ########################
+    # Simple model
+    if do_simple:
+        simple_model = init_model()
+
+        optim = Adam(simple_model.parameters(), lr=1e-4)
+
+        # standard training - no regularization at all
+        train_simple(
+            model=simple_model,
+            loader=nyu_train_dataloader,
+            optim=optim,
+            epochs=5,
+        )
+        simple_res = eval(simple_model, nyu_test_dataloader)
+        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+        simple_path = "output/checkpoint/simple_model_" + timestr + ".pth"
+        torch.save(simple_model.state_dict(), simple_path)
+
+    #######################
+    # Cutmix model
+    if do_cutmix:
+        cutmix_model = init_model()
+
+        optim = Adam(cutmix_model.parameters(), lr=1e-4)
+
+        # standard training - no regularization at all
+        train_with_cutmix(
+            model=cutmix_model,
+            loader=nyu_train_dataloader,
+            optim=optim,
+            epochs=5,
+        )
+        simple_res = eval(simple_model, nyu_test_dataloader)
+        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+        cutmix_path = "output/checkpoint/cutmix_model" + timestr + ".pth"
+        torch.save(cutmix_model.state_dict(), cutmix_path)
+
+    #######################
+    # LMR model
+    if do_LMR:
+        lmr_model = init_model()
+
+        optim = Adam(lmr_model.parameters(), lr=1e-4)
+
+        # standard training - no regularization at all
+        train_simple(
+            model=lmr_model,
+            loader=nyu_train_dataloader,
+            optim=optim,
+            epochs=5,
+        )
+        simple_res = eval(lmr_model, nyu_test_dataloader)
+        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+        lmr_path = "output/checkpoint/lmr_model" + timestr + ".pth"
+        torch.save(lmr_model.state_dict(), lmr_path)

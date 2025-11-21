@@ -105,10 +105,10 @@ def train_simple(
     i = 0
     # loss function
     loss = ScaleAndShiftInvariantLoss()
-    timestamp = datetime.now().strftime("%d%m%Y%H%M%S")
+    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
 
     log_path = "output/log"
-    logfile_name = log_path + "Log_Simple_" + timestamp
+    logfile_name = log_path + "/Log_Simple_" + timestamp
 
 
     # training loop
@@ -173,7 +173,7 @@ def train_simple(
             output_path = Path(log_path)
             output_path.mkdir(parents=True, exist_ok=True)
             with open(logfile_name, "a") as logfile:
-                logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}/n")
+                logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}\n")
             try:
                 plot_test_frames(model, loader.dataset, [1, 3, 5], e, "simple" + timestamp, True)
                 plot_while_training(
@@ -202,7 +202,7 @@ def train_with_lmr(
     loss = ScaleAndShiftInvariantLoss()
     lmr_loss = LMRLoss()
     
-    timestamp = datetime.now().strftime("%d%m%Y%H%M%S")
+    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
     log_path = "output/log"
     logfile_name = log_path + "/Log_LMR_" + timestamp
 
@@ -265,7 +265,7 @@ def train_with_lmr(
             output_path = Path(log_path)
             output_path.mkdir(parents=True, exist_ok=True)
             with open(logfile_name, "a") as logfile:
-                logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | LMR Loss: {sum(lmr_mask_losses)/len(lmr_mask_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}/n")
+                logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | LMR Loss: {sum(lmr_mask_losses)/len(lmr_mask_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}\n")
             try:
                 plot_test_frames(model, loader.dataset, [1, 3, 5], e, "LMR_" + timestamp, True)
                 plot_while_training(X[0, ...], y[0, ...], prediction[0, ...], e, "LMR_" + timestamp)
@@ -292,7 +292,7 @@ def train_with_cutmix(
     # loss function
     loss = ScaleAndShiftInvariantLoss()
     
-    timestamp = datetime.now().strftime("%d%m%Y%H%M%S")
+    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
     log_path = "output/log"
     logfile_name = log_path + "/Log_Cutmix_" + timestamp
 
@@ -363,7 +363,7 @@ def train_with_cutmix(
             output_path = Path(log_path)
             output_path.mkdir(parents=True, exist_ok=True)
             with open(logfile_name, "a") as logfile:
-                logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}/n")
+                logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}\n")
             try:
                 plot_test_frames(model, loader.dataset, [1, 3, 5], e, "cutmix" + timestamp, True)
                 plot_while_training(
@@ -446,6 +446,10 @@ if __name__ == "__main__":
     nyu_train_ds = NyuDepthV2(NYU_DATA_PATH, NYU_SPLIT_PATH, split="train")
     nyu_train_dataloader = DataLoader(nyu_train_ds, batch_size=4)
     nyu_test_dataloader = DataLoader(nyu_train_ds, batch_size=4)
+
+    # Make output folder
+    output_path = Path("output/checkpoint")
+    output_path.mkdir(parents=True, exist_ok=True)
 
     ########################
     # model training runs

@@ -11,10 +11,9 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from matplotlib.transforms import CompositeAffine2D
 from torch.optim import Adam, Optimizer
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import v2
 
 from dataloaders.nyu_data import NyuDepthV2
 from DPT.dpt.models import DPTDepthModel
@@ -93,6 +92,7 @@ def train_simple(
     model: nn.Module,
     loader: DataLoader,
     optim: Optimizer,
+    scheduler: CosineAnnealingLR,
     epochs: int = 50,
     print_every: int = 1,
 ) -> None:
@@ -130,6 +130,7 @@ def train_simple(
             optim.zero_grad()
             composite_loss.backward()  # back-prop losses
             optim.step()
+            scheduler.step()
 
             # debugging
             grads = []
@@ -165,6 +166,7 @@ def train_with_lmr(
     model: nn.Module,
     loader: DataLoader,
     optim: Optimizer,
+    scheduler: CosineAnnealingLR,
     epochs: int = 50,
     print_every: int = 1,
 ) -> None:
@@ -172,7 +174,7 @@ def train_with_lmr(
     Train depth head on NYU dataset with lmr regularizer
     """
     model.train()
-    pbar = tqdm(total=epochs * len(loader), desc="Training MDE:")
+    pbar = tqdm(total=epochs * len(loader), desc="Training MDE:", ascii=">=")
     i = 0
     # loss function
     loss = ScaleAndShiftInvariantLoss()
@@ -209,6 +211,7 @@ def train_with_lmr(
             optim.zero_grad()
             composite_loss.backward()  # back-prop losses
             optim.step()
+            scheduler.step()
 
             if i % print_every == 0:
                 with torch.no_grad():
@@ -231,6 +234,7 @@ def train_with_cutmix(
     model: nn.Module,
     loader: DataLoader,
     optim: Optimizer,
+    scheduler: CosineAnnealingLR,
     epochs: int = 50,
     print_every: int = 1,
     cutmix_probability: float = 0.1,
@@ -284,6 +288,7 @@ def train_with_cutmix(
             optim.zero_grad()
             composite_loss.backward()  # back-prop losses
             optim.step()
+            scheduler.step()
 
             if i % print_every == 0:
                 with torch.no_grad():
@@ -379,23 +384,29 @@ if __name__ == "__main__":
 
     ########################
     # model training booleans
-    do_simple = False
-    do_cutmix = True
+    do_simple = True
+    do_cutmix = False
     do_LMR = False
+
+    ########################
+    # Model agnostic hyperparameters
+    epochs = 5
 
     ########################
     # Simple model
     if do_simple:
         simple_model = init_model()
 
-        optim = Adam(simple_model.parameters(), lr=1e-4)
+        optim = Adam(simple_model.parameters(), lr=1e-5)
+        scheduler = CosineAnnealingLR(optim, eta_min=1e-8, T_max=epochs)
 
         # standard training - no regularization at all
         train_simple(
             model=simple_model,
             loader=nyu_train_dataloader,
             optim=optim,
-            epochs=5,
+            epochs=epochs,
+            scheduler=scheduler,
         )
         simple_res = eval(simple_model, nyu_test_dataloader)
         timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
@@ -408,6 +419,7 @@ if __name__ == "__main__":
         cutmix_model = init_model()
 
         optim = Adam(cutmix_model.parameters(), lr=1e-4)
+        scheduler = CosineAnnealingLR(optim, eta_min=1e-8, T_max=epochs)
 
         # standard training - no regularization at all
         train_with_cutmix(
@@ -415,8 +427,10 @@ if __name__ == "__main__":
             loader=nyu_train_dataloader,
             optim=optim,
             epochs=5,
+            cutmix_probability=0.25,
+            scheduler=scheduler,
         )
-        simple_res = eval(simple_model, nyu_test_dataloader)
+        cutmix_res = eval(cutmix_model, nyu_test_dataloader)
         timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
         cutmix_path = "output/checkpoint/cutmix_model" + timestr + ".pth"
         torch.save(cutmix_model.state_dict(), cutmix_path)
@@ -426,16 +440,18 @@ if __name__ == "__main__":
     if do_LMR:
         lmr_model = init_model()
 
-        optim = Adam(lmr_model.parameters(), lr=1e-4)
+        optim = Adam(lmr_model.parameters(), lr=1e-5)
+        scheduler = CosineAnnealingLR(optim, eta_min=1e-8, T_max=epochs)
 
         # standard training - no regularization at all
-        train_simple(
+        train_with_lmr(
             model=lmr_model,
             loader=nyu_train_dataloader,
             optim=optim,
             epochs=5,
+            scheduler=scheduler,
         )
-        simple_res = eval(lmr_model, nyu_test_dataloader)
+        lmr_res = eval(lmr_model, nyu_test_dataloader)
         timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
         lmr_path = "output/checkpoint/lmr_model" + timestr + ".pth"
         torch.save(lmr_model.state_dict(), lmr_path)

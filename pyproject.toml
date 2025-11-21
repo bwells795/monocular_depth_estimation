@@ -49,7 +49,14 @@ venvPath="."
 venv = ".venv"
 include=['.']
 pythonVersion="3.13"
-
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportMissingParameterType = false
+reportAny = false
+reportUnannotatedClassAttribute = false
+reportMissingTypeArgument = false
+reportUnknownParameterType = false
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.

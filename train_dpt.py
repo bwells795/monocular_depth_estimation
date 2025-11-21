@@ -107,7 +107,8 @@ def train_simple(
     loss = ScaleAndShiftInvariantLoss()
     timestamp = datetime.now().strftime("%d%m%Y%H%M%S")
 
-    logfile_name = "output/log/Log_Simple_" + timestamp
+    log_path = "output/log"
+    logfile_name = log_path + "Log_Simple_" + timestamp
 
 
     # training loop
@@ -169,6 +170,8 @@ def train_simple(
             i += 1
 
         with torch.no_grad():
+            output_path = Path(log_path)
+            output_path.mkdir(parents=True, exist_ok=True)
             with open(logfile_name, "a") as logfile:
                 logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}/n")
             try:
@@ -200,7 +203,8 @@ def train_with_lmr(
     lmr_loss = LMRLoss()
     
     timestamp = datetime.now().strftime("%d%m%Y%H%M%S")
-    logfile_name = "output/log/Log_LMR_" + timestamp
+    log_path = "output/log"
+    logfile_name = log_path + "/Log_LMR_" + timestamp
 
     # training loop
     for e in range(epochs):
@@ -258,6 +262,8 @@ def train_with_lmr(
             i += 1
 
         with torch.no_grad():
+            output_path = Path(log_path)
+            output_path.mkdir(parents=True, exist_ok=True)
             with open(logfile_name, "a") as logfile:
                 logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | LMR Loss: {sum(lmr_mask_losses)/len(lmr_mask_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}/n")
             try:
@@ -287,7 +293,8 @@ def train_with_cutmix(
     loss = ScaleAndShiftInvariantLoss()
     
     timestamp = datetime.now().strftime("%d%m%Y%H%M%S")
-    logfile_name = "output/log/Log_Cutmix_" + timestamp
+    log_path = "output/log"
+    logfile_name = log_path + "/Log_Cutmix_" + timestamp
 
     # training loop
     for e in range(epochs):
@@ -353,6 +360,8 @@ def train_with_cutmix(
             i += 1
 
         with torch.no_grad():
+            output_path = Path(log_path)
+            output_path.mkdir(parents=True, exist_ok=True)
             with open(logfile_name, "a") as logfile:
                 logfile.write(f"epoch: {e} | train_loss: {sum(errs)/len(errs):.2f} | mse_loss: {sum(mse_losses)/len(mse_losses):.2f} | l1_loss: {sum(l1_losses)/len(l1_losses):.2f} | composite loss: {sum(composite_losses)/len(composite_losses):.2f}/n")
             try:
@@ -451,6 +460,7 @@ if __name__ == "__main__":
     ########################
     # Simple model
     for i in range(do_simple):
+        print(f"Starting simple model {i}")
         simple_model = init_model()
 
         optim = Adam(simple_model.parameters(), lr=1e-4)
@@ -474,6 +484,7 @@ if __name__ == "__main__":
     #######################
     # Cutmix model
     for i in range(do_cutmix):
+        print(f"Starting Cutmix model {i}")
         cutmix_model = init_model()
 
         optim = Adam(cutmix_model.parameters(), lr=1e-4)
@@ -498,6 +509,7 @@ if __name__ == "__main__":
     #######################
     # LMR model
     for i in range(do_LMR):
+        print(f"Starting LMR model {i}")
         lmr_model = init_model()
 
         optim = Adam(lmr_model.parameters(), lr=1e-4)

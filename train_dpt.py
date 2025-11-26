@@ -66,6 +66,7 @@ def plot_test_frames(
             plt.savefig(out_str)
         else:
             plt.show()
+        plt.close()
 
 
 def plot_while_training(
@@ -87,6 +88,7 @@ def plot_while_training(
     out_path.mkdir(parents=True, exist_ok=True)
     out_path = out_path / f"depth_index_epoch_{epoch}.png"
     plt.savefig(out_path)
+    plt.close()
 
 
 def train_simple(
@@ -105,10 +107,10 @@ def train_simple(
     i = 0
     # loss function
     loss = ScaleAndShiftInvariantLoss()
-    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I_%M%p")
 
     log_path = "output/log"
-    logfile_name = log_path + "/Log_Simple_" + timestamp
+    logfile_name = log_path + "/Log_Simple_" + timestamp + ".txt"
 
 
     # training loop
@@ -202,7 +204,7 @@ def train_with_lmr(
     loss = ScaleAndShiftInvariantLoss()
     lmr_loss = LMRLoss()
     
-    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I_%M%p")
     log_path = "output/log"
     logfile_name = log_path + "/Log_LMR_" + timestamp
 
@@ -292,7 +294,7 @@ def train_with_cutmix(
     # loss function
     loss = ScaleAndShiftInvariantLoss()
     
-    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+    timestamp = datetime.now().strftime("%a_%d_%b_%Y_%I_%M%p")
     log_path = "output/log"
     logfile_name = log_path + "/Log_Cutmix_" + timestamp
 
@@ -403,7 +405,7 @@ def eval(model: nn.Module, loader: DataLoader) -> Dict:
 def init_model():
     model = (
         DPTDepthModel(
-            path="/Users/michael/Documents/Grad_School/Fall25/DeepLearning/Project/MDE/DPT/dpt/weights/dpt_hybrid-midas-501f0c75.pt",
+            path="F:/Masters Work/Deep Learning/Project/Code/monocular_depth_estimation/data/dpt_hybrid-midas-501f0c75.pt",
             scale=0.000305,
             shift=0.1378,
             invert=True,
@@ -453,13 +455,13 @@ if __name__ == "__main__":
 
     ########################
     # model training runs
-    do_simple = 1
+    do_simple = 5
     do_cutmix = 0
     do_LMR = 0
 
     ########################
     # Model agnostic hyperparameters
-    epochs = 1
+    epochs = 20
 
     ########################
     # Simple model
@@ -469,6 +471,9 @@ if __name__ == "__main__":
 
         optim = Adam(simple_model.parameters(), lr=1e-4)
         scheduler = CosineAnnealingLR(optim, eta_min=1e-8, T_max=epochs)
+
+        # Initial performance
+        plot_test_frames(simple_model, nyu_train_dataloader.dataset, [1, 3, 5], i, "simple_before_training", True)
 
         # standard training - no regularization at all
         log_name = train_simple(
@@ -481,7 +486,7 @@ if __name__ == "__main__":
         simple_res = eval(simple_model, nyu_test_dataloader)
         with open(log_name, "a") as file:
             file.write(f"Eval avg_mse: {simple_res["mse_avg"]}")
-        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I_%M%p")
         simple_path = "output/checkpoint/simple_model_" + timestr + ".pth"
         torch.save(simple_model.state_dict(), simple_path)
 
@@ -493,6 +498,9 @@ if __name__ == "__main__":
 
         optim = Adam(cutmix_model.parameters(), lr=1e-4)
         scheduler = CosineAnnealingLR(optim, eta_min=1e-8, T_max=epochs)
+
+        # Initial performance
+        plot_test_frames(cutmix_model, nyu_train_dataloader.dataset, [1, 3, 5], i, "cutmix_before_training", True)
 
         # Cutmix training
         log_name = train_with_cutmix(
@@ -506,7 +514,7 @@ if __name__ == "__main__":
         cutmix_res = eval(cutmix_model, nyu_test_dataloader)
         with open(log_name, "a") as file:
             file.write(f"Eval avg_mse: {cutmix_res["mse_avg"]}")
-        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I_%M%p")
         cutmix_path = "output/checkpoint/cutmix_model" + timestr + ".pth"
         torch.save(cutmix_model.state_dict(), cutmix_path)
 
@@ -519,6 +527,9 @@ if __name__ == "__main__":
         optim = Adam(lmr_model.parameters(), lr=1e-4)
         scheduler = CosineAnnealingLR(optim, eta_min=1e-8, T_max=epochs)
 
+        # Initial performance
+        plot_test_frames(lmr_model, nyu_train_dataloader.dataset, [1, 3, 5], i, "lmr_before_training", True)
+
         # Learned Mask Regularizer training
         log_name = train_with_lmr(
             model=lmr_model,
@@ -530,6 +541,6 @@ if __name__ == "__main__":
         lmr_res = eval(lmr_model, nyu_test_dataloader)
         with open(log_name, "a") as file:
             file.write(f"Eval avg_mse: {lmr_res["mse_avg"]}")
-        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I:%M%p")
+        timestr = datetime.now().strftime("%a_%d_%b_%Y_%I_%M%p")
         lmr_path = "output/checkpoint/lmr_model" + timestr + ".pth"
         torch.save(lmr_model.state_dict(), lmr_path)

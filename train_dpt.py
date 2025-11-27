@@ -405,7 +405,7 @@ def eval(model: nn.Module, loader: DataLoader) -> Dict:
 def init_model():
     model = (
         DPTDepthModel(
-            path="F:/Masters Work/Deep Learning/Project/Code/monocular_depth_estimation/data/dpt_hybrid-midas-501f0c75.pt",
+            path="/Users/michael/Documents/Grad_School/Fall25/DeepLearning/Project/MDE/DPT/dpt/weights/dpt_hybrid-midas-501f0c75.pt",
             scale=0.000305,
             shift=0.1378,
             invert=True,
